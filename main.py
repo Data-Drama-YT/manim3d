@@ -81,15 +81,15 @@ class BlenderGraphs:
             bm = bmesh.new()
             bmesh.ops.create_cone(bm, 
                                  segments=16, 
-                                 diameter1=0.02, 
-                                 diameter2=0.02, 
+                                 radius1=0.02, 
+                                 radius2=0.02, 
                                  depth=size)
             
             # Create arrow head
             arrow_head = bmesh.ops.create_cone(bm, 
                                               segments=16, 
-                                              diameter1=0.05, 
-                                              diameter2=0, 
+                                              radius1=0.05, 
+                                              radius2=0, 
                                               depth=0.2)
             
             # Translate arrow head to end of axis
@@ -663,7 +663,10 @@ class BlenderGraphs:
         if principled:
             principled.inputs['Base Color'].default_value = color
             principled.inputs['Roughness'].default_value = 0.4
-            principled.inputs['Specular'].default_value = 0.5
+            if 'Specular IOR Level' in principled.inputs:
+                principled.inputs['Specular IOR Level'].default_value = 0.5
+            elif 'Specular' in principled.inputs:
+                principled.inputs['Specular'].default_value = 0.5
             
             # Handle transparency if alpha < 1
             if color[3] < 1.0:
@@ -1349,25 +1352,23 @@ def create_examples():
     coord_system = plotter.setup_cartesian_system(dimension=3, size=10)
     
     # Example 1: 2D Function
-    sine = plotter.sine_wave(amplitude=2, frequency=0.5, phase=0)
+    #sine = plotter.sine_wave(amplitude=2, frequency=0.5, phase=0)
     
     # Example 2: 3D Surface
-    paraboloid = plotter.paraboloid(a=0.2, b=0.2, x_range=(-5, 5), y_range=(-5, 5))
+    #paraboloid = plotter.paraboloid(a=0.2, b=0.2, x_range=(-5, 5), y_range=(-5, 5))
     
     # Example 3: Parametric curve
-    helix = plotter.helix(radius=3, pitch=0.8, num_turns=5)
+    #helix = plotter.helix(radius=3, pitch=0.8, num_turns=5)
     
     # Example 4: Animated function
     wave_anim = plotter.animate_3d_wave(frames=120, start_frame=1)
     
     # Example 5: Implicit surface
-    sphere = plotter.sphere(radius=3, center=(0, 0, 6))
+    #sphere = plotter.sphere(radius=3, center=(0, 0, 6))
     
     return {
         "coordinate_system": coord_system,
-        "sine": sine,
-        "paraboloid": paraboloid,
-        "helix": helix,
-        "wave_animation": wave_anim,
-        "sphere": sphere
+        "wave_animation": wave_anim
     }
+
+create_examples()
