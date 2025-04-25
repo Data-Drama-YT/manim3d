@@ -1341,6 +1341,9 @@ class GraphPlotter:
         )
 
 
+def sq(x,y):
+    return x**2+y**2
+
 # Example Usage Module
 def create_examples():
     """Create example graphs to demonstrate the library capabilities"""
@@ -1350,7 +1353,7 @@ def create_examples():
     
     # Create a coordinate system
     coord_system = plotter.setup_cartesian_system(dimension=3, size=10)
-    
+    bg.plot_function_3d(sq)
     # Example 1: 2D Function
     #sine = plotter.sine_wave(amplitude=2, frequency=0.5, phase=0)
     
@@ -1361,14 +1364,13 @@ def create_examples():
     #helix = plotter.helix(radius=3, pitch=0.8, num_turns=5)
     
     # Example 4: Animated function
-    wave_anim = plotter.animate_3d_wave(frames=120, start_frame=1)
+    #wave_anim = plotter.animate_3d_wave(frames=120, start_frame=1)
     
     # Example 5: Implicit surface
     #sphere = plotter.sphere(radius=3, center=(0, 0, 6))
     
     return {
         "coordinate_system": coord_system,
-        "wave_animation": wave_anim
     }
 
 create_examples()
