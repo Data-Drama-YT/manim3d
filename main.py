@@ -24,7 +24,7 @@ def create_examples():
     
     # Create a coordinate system
     coord_system = plotter.setup_cartesian_system(dimension=3, size=10)
-    plotter.animate_3d_logistic_regression()
+    plotter.animate_3d_overfitting()
     return {
         "coordinate_system": coord_system,
     }
