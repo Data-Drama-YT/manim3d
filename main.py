@@ -1,5 +1,5 @@
 """
-BlenderGraphs - A Blender Python library for graph plotting and animation
+Graph3D - A Blender Python library for graph plotting and animation
 
 This library provides tools to easily create, customize, and animate
 mathematical graphs in Blender.
@@ -11,18 +11,18 @@ import numpy as np
 import math
 from mathutils import Vector, Matrix
 
-class BlenderGraphs:
-    """Main class for the BlenderGraphs library"""
+class Graph3D:
+    """Main class for the Graph3D library"""
     
     def __init__(self, scene=None):
-        """Initialize BlenderGraphs with optional scene"""
+        """Initialize Graph3D with optional scene"""
         self.scene = scene if scene else bpy.context.scene
         self.collections = {}
         self._setup_collections()
         
     def _setup_collections(self):
         """Create collections for organizing the graph elements"""
-        main_collection = bpy.data.collections.new("BlenderGraphs")
+        main_collection = bpy.data.collections.new("Graph3D")
         bpy.context.scene.collection.children.link(main_collection)
         
         subcollections = ["Axes", "Grids", "Graphs", "Labels", "Text"]
@@ -466,42 +466,43 @@ class BlenderGraphs:
         }
     
     def animate_function_3d(self, func, frames=100, start_frame=1, 
-                           x_range=(-5, 5), y_range=(-5, 5), samples=30, 
-                           color=(0, 0.8, 0.2, 1.0), equation_text=None, 
-                           material=None, animation_type="grow"):
+                       x_range=(-5, 5), y_range=(-5, 5), samples=30, 
+                       color=(0, 0.8, 0.2, 1.0), equation_text=None, 
+                       material=None):
         """
-        Animate a 3D function plot
-        
-        Parameters:
-        -----------
-        func : callable
-            The function to plot, taking (x, y) as input and returning z
-        frames : int
-            Number of frames for the animation
-        start_frame : int
-            Starting frame number
-        x_range, y_range : tuple
-            The ranges of x and y values (min, max)
-        samples : int
-            Number of sample points in each dimension
-        color : tuple
-            RGBA color for the plot
-        equation_text : str
-            Optional text representing the equation to display
-        material : Blender material
-            Optional material for the plot
-        animation_type : str
-            Type of animation ("grow", "evolve", "extrude")
-            
-        Returns:
-        --------
-        dict : Dictionary containing references to created objects
+        Animate a 3D function plot with the domain expanding uniformly over time
         """
         if not material:
             material = self._create_default_material(f"Animated3DMaterial", color)
         
-        # Generate initial mesh
+        # Generate coordinates for mesh
+        x_min, x_max = x_range
+        y_min, y_max = y_range
+        x_values = np.linspace(x_min, x_max, samples)
+        y_values = np.linspace(y_min, y_max, samples)
+        
+        # Create initial flat mesh (all z=0)
+        verts = []
+        faces = []
+        
+        # Create vertices
+        for j, y in enumerate(y_values):
+            for i, x in enumerate(x_values):
+                verts.append((x, y, 0))
+        
+        # Create faces
+        for j in range(samples - 1):
+            for i in range(samples - 1):
+                v1 = j * samples + i
+                v2 = j * samples + i + 1
+                v3 = (j + 1) * samples + i + 1
+                v4 = (j + 1) * samples + i
+                faces.append([v1, v2, v3, v4])
+        
+        # Create mesh with initial vertices
         mesh = bpy.data.meshes.new("animated_surface")
+        mesh.from_pydata(verts, [], faces)
+        mesh.update()
         mesh_obj = bpy.data.objects.new("AnimatedSurfacePlot", mesh)
         mesh.materials.append(material)
         self.collections["graphs"].objects.link(mesh_obj)
@@ -516,19 +517,44 @@ class BlenderGraphs:
                 material=material
             )
         
-        # Handle different animation types
-        if animation_type == "grow":
-            self._animate_growing_surface(
-                mesh_obj, func, x_range, y_range, samples, frames, start_frame
-            )
-        elif animation_type == "evolve":
-            self._animate_evolving_surface(
-                mesh_obj, func, x_range, y_range, samples, frames, start_frame
-            )
-        elif animation_type == "extrude":
-            self._animate_extruding_surface(
-                mesh_obj, func, x_range, y_range, samples, frames, start_frame
-            )
+        # Create basis shape key (reference shape - flat plane)
+        mesh_obj.shape_key_add(name="Basis")
+        
+        # Create all shape keys
+        shape_keys = []
+        for frame_idx in range(frames):
+            t = frame_idx / (frames - 1)
+            sk = mesh_obj.shape_key_add(name=f"Frame_{frame_idx}")
+            shape_keys.append(sk)
+            
+            # Calculate progress for this frame (0 to 1)
+            progress = t
+            
+            # Update vertex positions for this shape key
+            for j, y in enumerate(y_values):
+                for i, x in enumerate(x_values):
+                    idx = j * samples + i
+                    # Calculate normalized position in grid (0 to 1)
+                    x_norm = (x - x_min) / (x_max - x_min)
+                    y_norm = (y - y_min) / (y_max - y_min)
+                    
+                    # Only calculate z if this point should be "revealed" yet
+                    if (x_norm + y_norm) / 2 <= progress:
+                        z = func(x, y, t)
+                    else:
+                        z = 0
+                    
+                    sk.data[idx].co = (x, y, z)
+        
+        # Animate shape keys
+        for frame_idx in range(frames):
+            frame = start_frame + frame_idx
+            bpy.context.scene.frame_set(frame)
+            
+            # Set all shape keys to 0 except the current one
+            for i, sk in enumerate(shape_keys):
+                sk.value = 1.0 if i == frame_idx else 0.0
+                sk.keyframe_insert("value", frame=frame)
         
         # If there's equation text, animate its appearance
         if text_obj:
@@ -834,6 +860,7 @@ class BlenderGraphs:
             
             # Insert keyframe
             curve_obj.keyframe_insert("location")
+
     def _animate_drawing_curve(self, curve_obj, func, x_range, samples, frames, start_frame, progress_func=None):
         """Animate a curve as if it's being drawn, with a trailing effect"""
         x_min, x_max = x_range
@@ -877,62 +904,139 @@ class BlenderGraphs:
             # Insert keyframe
             curve_obj.keyframe_insert("location")
     
+    
     def _animate_growing_surface(self, mesh_obj, func, x_range, y_range, samples, frames, start_frame):
+        """Animate a surface by gradually revealing it from the center outward"""
+        """Animate a surface by gradually revealing it from the center outward"""
         """Animate a surface by gradually revealing it from the center outward"""
         x_min, x_max = x_range
         y_min, y_max = y_range
-        
-        # Generate base points
         x_values = np.linspace(x_min, x_max, samples)
         y_values = np.linspace(y_min, y_max, samples)
         
-        # Get the center indices
-        center_x = samples // 2
-        center_y = samples // 2
+        # --- 1. Create the base mesh (flat)
+        # First check if mesh_obj is valid and has mesh data
+        if mesh_obj is None or not hasattr(mesh_obj, 'data') or mesh_obj.data is None:
+            # Create a new mesh data block
+            mesh_data = bpy.data.meshes.new(name="GrowingSurface")
+            # Assign it to the mesh_obj if it exists
+            if mesh_obj is not None:
+                mesh_obj.data = mesh_data
+            else:
+                # Create a new object with the mesh data
+                mesh_obj = bpy.data.objects.new("GrowingSurface", mesh_data)
+                # Link it to the current scene
+                bpy.context.collection.objects.link(mesh_obj)
         
-        # Maximum distance from center to corner
-        max_dist = np.sqrt((samples-1)**2 + (samples-1)**2)
+        # Clear existing mesh data
+        if len(mesh_obj.data.vertices) > 0:
+            bpy.ops.object.select_all(action='DESELECT')
+            mesh_obj.select_set(True)
+            bpy.context.view_layer.objects.active = mesh_obj
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            bpy.ops.mesh.delete(type='VERT')
+            bpy.ops.object.mode_set(mode='OBJECT')
         
-        for frame in range(frames):
-            bpy.context.scene.frame_set(start_frame + frame)
+        # Now create the mesh using bmesh
+        bm = bmesh.new()
+        vert_grid = []
+        for j, y in enumerate(y_values):
+            row = []
+            for i, x in enumerate(x_values):
+                v = bm.verts.new((x, y, 0))
+                row.append(v)
+            vert_grid.append(row)
+        
+        for j in range(samples - 1):
+            for i in range(samples - 1):
+                v1 = vert_grid[j][i]
+                v2 = vert_grid[j][i+1]
+                v3 = vert_grid[j+1][i+1]
+                v4 = vert_grid[j+1][i]
+                bm.faces.new([v1, v2, v3, v4])
+        
+        # Make sure we have a valid mesh data object
+        bm.to_mesh(mesh_obj.data)
+        bm.free()
+        
+        # Update the mesh
+        mesh_obj.data.update()
+        
+        # --- 2. Create animation
+        # Calculate center and max distance
+        center_i = samples // 2
+        center_j = samples // 2
+        max_dist = math.sqrt((samples-1)**2 + (samples-1)**2)
+        
+        # Create animation data if it doesn't exist
+        if not mesh_obj.animation_data:
+            mesh_obj.animation_data_create()
+        
+        # Create a new action or use existing one
+        action_name = f"{mesh_obj.name}_grow_action"
+        if action_name in bpy.data.actions:
+            action = bpy.data.actions[action_name]
+        else:
+            action = bpy.data.actions.new(action_name)
+        
+        mesh_obj.animation_data.action = action
+        
+        # --- 3. Add a custom property to control the growth
+        mesh_obj["grow_factor"] = 0.0
+        
+        # Set up animation for the custom property
+        for frame_num in range(frames):
+            current_frame = start_frame + frame_num
+            bpy.context.scene.frame_set(current_frame)
             
-            # Calculate current radius
-            progress = frame / (frames - 1)
-            current_radius = progress * max_dist * 1.2  # 1.2 to ensure full coverage
+            # Calculate growth factor (0 to 1)
+            mesh_obj["grow_factor"] = frame_num / (frames - 1)
             
-            # Create new mesh for this frame
-            bm = bmesh.new()
-            
-            # Create vertices with distance-based visibility
-            vertices = {}
-            for j, y in enumerate(y_values):
-                for i, x in enumerate(x_values):
-                    # Calculate distance from center in grid coordinates
-                    dist = np.sqrt((i - center_x)**2 + (j - center_y)**2)
-                    
-                    # Only create vertex if within current radius
-                    if dist <= current_radius:
-                        z = func(x, y)
-                        vertices[(i, j)] = bm.verts.new((x, y, z))
-            
-            # Create faces where all four vertices exist
-            for j in range(samples - 1):
-                for i in range(samples - 1):
-                    # Only create face if all corners exist
-                    if (i, j) in vertices and (i+1, j) in vertices and \
-                       (i, j+1) in vertices and (i+1, j+1) in vertices:
-                        v1 = vertices[(i, j)]
-                        v2 = vertices[(i+1, j)]
-                        v3 = vertices[(i+1, j+1)]
-                        v4 = vertices[(i, j+1)]
-                        bm.faces.new([v1, v2, v3, v4])
-            
-            # Update the mesh
-            bm.to_mesh(mesh_obj.data)
-            bm.free()
-            
-            # Insert keyframe
-            mesh_obj.keyframe_insert("location")
+            # Keyframe the custom property
+            mesh_obj.keyframe_insert(data_path='["grow_factor"]', frame=current_frame)
+        
+        # --- 4. Add drivers to vertices
+        # Store final heights for each vertex
+        vertex_heights = {}
+        
+        # Calculate final heights for each vertex
+        for j in range(samples):
+            for i in range(samples):
+                index = j * samples + i
+                x = x_values[i]
+                y = y_values[j]
+                final_z = func(x, y)
+                dist = math.sqrt((i - center_i)**2 + (j - center_j)**2)
+                normalized_dist = dist / (max_dist * 1.2)  # 1.2 to ensure full coverage
+                
+                # Save the data for this vertex
+                vertex_heights[index] = (final_z, normalized_dist)
+        
+        # Make sure we're in object mode
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # Add driver to each vertex
+        for index, (final_z, normalized_dist) in vertex_heights.items():
+            if index < len(mesh_obj.data.vertices):
+                # Create a new driver for this vertex's z position
+                fcurve = mesh_obj.data.vertices[index].driver_add("co", 2)
+                driver = fcurve.driver
+                driver.type = 'SCRIPTED'
+                
+                # Add variable to the driver
+                var = driver.variables.new()
+                var.name = "grow"
+                var.type = 'SINGLE_PROP'
+                var.targets[0].id = mesh_obj
+                var.targets[0].data_path = '["grow_factor"]'
+                
+                # Set up the driver expression
+                driver.expression = f"grow > {normalized_dist} ? {final_z} : 0"
+        
+        # Return the mesh object for further use
+        return mesh_obj
+
     
     def _animate_evolving_surface(self, mesh_obj, func, x_range, y_range, samples, frames, start_frame):
         """Animate a surface by smoothly transitioning between function states"""
@@ -1059,8 +1163,8 @@ class GraphPlotter:
     """High-level API for common mathematical functions"""
     
     def __init__(self, blender_graphs=None):
-        """Initialize with BlenderGraphs instance"""
-        self.bg = blender_graphs if blender_graphs else BlenderGraphs()
+        """Initialize with Graph3D instance"""
+        self.bg = blender_graphs if blender_graphs else Graph3D()
     
     def setup_cartesian_system(self, dimension=3, size=5, grid=True):
         """Setup a standard Cartesian coordinate system"""
@@ -1322,23 +1426,14 @@ class GraphPlotter:
                        x_range=(-5, 5), y_range=(-5, 5), 
                        color=(0.2, 0.6, 0, 1.0), with_text=True):
         """Animate a 3D wave propagation"""
-        def func(x, y, progress):
+        def func(x, y, progress=1):
             time = progress * 5  # Scale time for animation effect
             r = math.sqrt(x**2 + y**2)
             return 2 * math.sin(r - time) / max(1, r**0.7)
         
         equation = "z = sin(√(x² + y²) - t)"
         
-        return self.bg.animate_function_3d(
-            func=func,
-            frames=frames,
-            start_frame=start_frame,
-            x_range=x_range,
-            y_range=y_range,
-            color=color,
-            equation_text=equation if with_text else None,
-            animation_type="evolve"
-        )
+        return self.bg.animate_function_3d(func)
 
 
 def sq(x,y):
@@ -1348,12 +1443,12 @@ def sq(x,y):
 def create_examples():
     """Create example graphs to demonstrate the library capabilities"""
     # Initialize the library
-    bg = BlenderGraphs()
+    bg = Graph3D()
     plotter = GraphPlotter(bg)
     
     # Create a coordinate system
     coord_system = plotter.setup_cartesian_system(dimension=3, size=10)
-    bg.plot_function_3d(sq)
+    #bg.plot_function_3d(sq)
     # Example 1: 2D Function
     #sine = plotter.sine_wave(amplitude=2, frequency=0.5, phase=0)
     
@@ -1365,7 +1460,18 @@ def create_examples():
     
     # Example 4: Animated function
     #wave_anim = plotter.animate_3d_wave(frames=120, start_frame=1)
+    # Define our parabolic function
+    def parabola_func(x, y, t):
+        """Demo function: An expanding parabolic surface"""
+        # Scale the parabola with time (t goes from 0 to 1)
+        amplitude = 2 * t  # Height grows over time
+        spread = 0.5 + 1.5 * t  # Width expands over time
+        
+        # Create a circular parabola
+        r_squared = x**2 + y**2
+        return amplitude * (1 - r_squared/(spread**2))
     
+    parabola_animation=bg.animate_function_3d(parabola_func,x_range=(-2,2),y_range=(-2,2))
     # Example 5: Implicit surface
     #sphere = plotter.sphere(radius=3, center=(0, 0, 6))
     

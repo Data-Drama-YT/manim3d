@@ -1,6 +1,7 @@
 import bpy
 import numpy as np
 import sympy as sp
+import bmesh
 from mathutils import Vector, Matrix
 import colorsys
 import traceback
@@ -9,12 +10,14 @@ from skimage.measure import marching_cubes
 
 
 class Graph3D:
-    def __init__(self,planes,grid_size,name="myGraph",grid_spacing=1,grid_thickness=0.01):
+    def __init__(self,planes,grid_size,name="myGraph",grid_spacing=1,grid_thickness=0.01,point_size=0.05):
         """
         Args:
             planes: list of planes to render grids on, options are ['xy','xz','yz'].
             grid_size: Size of the grid in terms of sqaures
             grid_spacing: Space between each line. Defaults to 1.
+            grid_thickness: Thickness of the lines in the grid. Defaults to 0.01
+            point_size: Size of the points plotted on the graph. Defaults to 0.05
         """
         self.planes=planes
         self.grid_size=grid_size
@@ -22,9 +25,16 @@ class Graph3D:
         self.name=name
         self.grid_thickness = grid_thickness
         self.grid_objects = {'xy': [], 'xz': [], 'yz': []}
+        self.point_size=point_size
 
         # Main collection for this graph
         self.main_collection = self._create_collection(f"{name}_Collection")
+
+        #Collection for all the points plotted on the graph
+        self.points_collection = None
+
+        #Collection for all 3d functions plotted
+        self.functions_collection_3d = self._create_collection(f"{name}_3D_Functions_Collection")
 
     def draw_line(self, start, end, name="Line", collection=None, 
                   material=None, thickness=None, animate=False, 
@@ -161,7 +171,7 @@ class Graph3D:
         
         return mat
 
-    def draw_grids(self, tick_labels=False):
+    def draw_grids(self, tick_labels=False,animate_lines=False):
         """
         Draw grid lines on specified planes
         
@@ -186,15 +196,14 @@ class Graph3D:
         # Draw XY plane grid (parallel to ground)
         if 'xy' in self.planes:
             for x in range(-half, half + 1):
-                if x == 0:  # Skip the axis line, it's drawn separately
-                    continue
                 x_pos = x * self.grid_spacing
                 line = self.draw_line(
                     (x_pos, -half * self.grid_spacing, 0),
                     (x_pos, half * self.grid_spacing, 0),
                     name=f"XY_Grid_X{x}",
                     collection=self.grid_collection,
-                    material=xy_mat
+                    material=xy_mat,
+                    animate=animate_lines
                 )
                 self.grid_objects['xy'].append(line)
                 
@@ -203,15 +212,14 @@ class Graph3D:
                     self._add_tick_label(str(x), (x_pos, -half * self.grid_spacing * 1.05, 0), f"X{x}_Label", xy_mat)
 
             for y in range(-half, half + 1):
-                if y == 0:  # Skip the axis line
-                    continue
                 y_pos = y * self.grid_spacing
                 line = self.draw_line(
                     (-half * self.grid_spacing, y_pos, 0),
                     (half * self.grid_spacing, y_pos, 0),
                     name=f"XY_Grid_Y{y}",
                     collection=self.grid_collection,
-                    material=xy_mat
+                    material=xy_mat,
+                    animate=animate_lines
                 )
                 self.grid_objects['xy'].append(line)
                 
@@ -222,28 +230,26 @@ class Graph3D:
         # Draw XZ plane grid (vertical, frontal)
         if 'xz' in self.planes:
             for x in range(-half, half + 1):
-                if x == 0:  # Skip the axis line
-                    continue
                 x_pos = x * self.grid_spacing
                 line = self.draw_line(
                     (x_pos, 0, -half * self.grid_spacing),
                     (x_pos, 0, half * self.grid_spacing),
                     name=f"XZ_Grid_X{x}",
                     collection=self.grid_collection,
-                    material=xz_mat
+                    material=xz_mat,
+                    animate=animate_lines
                 )
                 self.grid_objects['xz'].append(line)
 
             for z in range(-half, half + 1):
-                if z == 0:  # Skip the axis line
-                    continue
                 z_pos = z * self.grid_spacing
                 line = self.draw_line(
                     (-half * self.grid_spacing, 0, z_pos),
                     (half * self.grid_spacing, 0, z_pos),
                     name=f"XZ_Grid_Z{z}",
                     collection=self.grid_collection,
-                    material=xz_mat
+                    material=xz_mat,
+                    animate=animate_lines
                 )
                 self.grid_objects['xz'].append(line)
                 
@@ -254,28 +260,26 @@ class Graph3D:
         # Draw YZ plane grid (vertical, side)
         if 'yz' in self.planes:
             for y in range(-half, half + 1):
-                if y == 0:  # Skip the axis line
-                    continue
                 y_pos = y * self.grid_spacing
                 line = self.draw_line(
                     (0, y_pos, -half * self.grid_spacing),
                     (0, y_pos, half * self.grid_spacing),
                     name=f"YZ_Grid_Y{y}",
                     collection=self.grid_collection,
-                    material=yz_mat
+                    material=yz_mat,
+                    animate=animate_lines
                 )
                 self.grid_objects['yz'].append(line)
 
             for z in range(-half, half + 1):
-                if z == 0:  # Skip the axis line
-                    continue
                 z_pos = z * self.grid_spacing
                 line = self.draw_line(
                     (0, -half * self.grid_spacing, z_pos),
                     (0, half * self.grid_spacing, z_pos),
                     name=f"YZ_Grid_Z{z}",
                     collection=self.grid_collection,
-                    material=yz_mat
+                    material=yz_mat,
+                    animate=animate_lines
                 )
                 self.grid_objects['yz'].append(line)
                 
@@ -305,9 +309,140 @@ class Graph3D:
         constraint.use_offset = True
         
         return text_obj
+    
+    def create_point(self, location, name="Point", color=None, size=None):
+        """
+        Create a point at the specified 3D location
+        
+        Args:
+            location: (x, y, z) coordinates
+            name: name for the point object
+            color: color for the point (optional)
+            size: size of the point (overrides default)
+            
+        Returns:
+            The created point object
+        """
+        if size is None:
+            size = self.point_size
+            
+            
+        # Create points collection if it doesn't exist
+        if self.points_collection is None:
+            self.points_collection = self._create_collection(f"{self.name}_Points", self.main_collection)
+            
+        # Create material for this point
+        point_mat = self._create_default_material(f"{name}_Material", color=(0.8, 0.8, 0.8, 0.3))
+        
+        # Create icosphere
+        bpy.ops.mesh.primitive_ico_sphere_add(
+            subdivisions=2,
+            radius=size,
+            location=location
+        )
+        
+        point = bpy.context.active_object
+        point.name = name
+        
+        # Apply material
+        if point.data.materials:
+            point.data.materials[0] = point_mat
+        else:
+            point.data.materials.append(point_mat)
+            
+        # Link to points collection
+        bpy.context.collection.objects.unlink(point)
+        self.points_collection.objects.link(point)
+        
+        return point
+    
+    def plot_function_3d(self, func, x_range=(-5, 5), y_range=(-5, 5), 
+                         samples=50, color=(0, 0.8, 0.2, 1.0), 
+                         equation_text=None, material=None):
+        """
+        Plot a 3D function z = f(x, y)
+        
+        Parameters:
+        -----------
+        func : callable
+            The function to plot, taking (x, y) as input and returning z
+        x_range, y_range : tuple
+            The ranges of x and y values (min, max)
+        samples : int
+            Number of sample points in each dimension
+        color : tuple
+            RGBA color for the plot
+        equation_text : str
+            Optional text representing the equation to display
+        material : Blender material
+            Optional material for the plot
+            
+        Returns:
+        --------
+        dict : Dictionary containing references to created objects
+        """
+        if not material:
+            material = self._create_default_material(f"Plot3DMaterial", color)
+        
+        # Generate grid points
+        x_values = np.linspace(x_range[0], x_range[1], samples)
+        y_values = np.linspace(y_range[0], y_range[1], samples)
+        
+        # Create a mesh
+        mesh = bpy.data.meshes.new("surface_mesh")
+        bm = bmesh.new()
+        
+        # Create vertices
+        vertices = []
+        for y in y_values:
+            for x in x_values:
+                z = func(x, y)
+                bm.verts.new((x, y, z))
+                
+        bm.verts.ensure_lookup_table()
+        
+        # Create faces
+        for j in range(samples - 1):
+            for i in range(samples - 1):
+                v1 = bm.verts[j * samples + i]
+                v2 = bm.verts[j * samples + i + 1]
+                v3 = bm.verts[(j + 1) * samples + i + 1]
+                v4 = bm.verts[(j + 1) * samples + i]
+                bm.faces.new([v1, v2, v3, v4])
+        
+        # Create the mesh object
+        bm.to_mesh(mesh)
+        bm.free()
+        
+        mesh_obj = bpy.data.objects.new("SurfacePlot", mesh)
+        mesh.materials.append(material)
+        
+        self.functions_collection_3d.objects.link(mesh_obj)
+        
+        # Create equation text if provided
+        text_obj = None
+        if equation_text:
+            text_obj = self._create_text_label(
+                equation_text, 
+                position=(0, 0, max([func(x, y) for x in x_values for y in y_values]) + 1), 
+                size=0.5, 
+                material=material
+            )
+        
+        return {
+            "surface": mesh_obj,
+            "equation_text": text_obj
+        }
 
     
 
 my_graph=Graph3D(planes=['xy','xz'],grid_size=10)
-my_graph.draw_grids()
+my_graph.draw_grids(animate_lines=True)
 my_graph.draw_line((0,0,0),(5,5,0),"First Line",animate=True)
+my_graph.create_point((0,0,5))
+
+def upper_hemisphere(x, y, r=5):
+    return np.sqrt(r**2 - x**2 - y**2)
+
+
+my_graph.plot_function_3d(upper_hemisphere)
