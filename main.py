@@ -24,8 +24,7 @@ def create_examples():
     
     # Create a coordinate system
     coord_system = plotter.setup_cartesian_system(dimension=3, size=10)
-    plotter.animate_3d_heart(x_range=(-10,10),y_range=(-10,10))
-    input()
+    plotter.animate_3d_logistic_regression()
     return {
         "coordinate_system": coord_system,
     }
@@ -57,6 +56,4 @@ def create_examples():
     # Example 5: Implicit surface
     #sphere = plotter.sphere(radius=3, center=(0, 0, 6))
     
-    
-
 create_examples()

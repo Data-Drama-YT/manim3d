@@ -377,7 +377,7 @@ class GraphPlotter:
         """Animate a sphere that breathes"""
         def func(x, y, progress=1):
             if x**2 + y**2 > 1:
-                return None  # Hide outside sphere
+                return 0  # Hide outside sphere
             return math.sqrt(1 - x**2 - y**2) * (0.8 + 0.2 * math.sin(progress * 2 * math.pi))
 
         equation = "z = √(1-x²-y²) * breathing factor"
@@ -425,7 +425,7 @@ class GraphPlotter:
         def func(x, y, progress=1):
             r = math.sqrt(x**2 + y**2)
             if r < 0.1:
-                return None  # Singular point (too sharp)
+                return 0  # Singular point (too sharp)
             distortion = 1 / (r**1.5 + 0.2)
             return distortion * (1 + 0.2 * math.sin(progress * 2 * math.pi))
 
@@ -497,7 +497,9 @@ class GraphPlotter:
             return z
         
         equation = "z = sin(√(x² + y²) - t) * exp(-√(x² + y²)/5)"
-        return self.animate_3d_function(func, frames, start_frame, x_range, y_range, color, equation)
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
     
     def animate_3d_northern_lights(self, frames=100, start_frame=1, 
                                 x_range=(-5, 5), y_range=(-5, 5), 
@@ -509,7 +511,9 @@ class GraphPlotter:
             return z
         
         equation = "z = sin(2x + t) * cos(2y + t) * exp(-√(x² + y²)/5)"
-        return self.animate_3d_function(func, frames, start_frame, x_range, y_range, color, equation)
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
     
     def animate_3d_expanding_bubble(self, frames=100, start_frame=1, 
                                  x_range=(-5, 5), y_range=(-5, 5), 
@@ -521,7 +525,9 @@ class GraphPlotter:
             return z
         
         equation = "z = exp(-√(x² + y²) * (1 - t))"
-        return self.animate_3d_function(func, frames, start_frame, x_range, y_range, color, equation)
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
     
     def animate_3d_ocean_waves(self, frames=100, start_frame=1, 
                             x_range=(-5, 5), y_range=(-5, 5), 
@@ -534,7 +540,110 @@ class GraphPlotter:
             return z
         
         equation = "z = sin(√(x² + y²) - t) * exp(-√(x² + y²)/5)"
-        return self.animate_3d_function(func, frames, start_frame, x_range, y_range, color, equation)
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
+    
+    def animate_3d_linear_regression(self, frames=100, start_frame=1,
+                              x_range=(-3, 3), y_range=(-3, 3),
+                              color=(0.3, 0.7, 0.9, 0.8), with_text=True):
+        """Animate a linear regression plane fitting to noisy 3D data"""
+        def func(x, y, progress=1):
+            # Base linear relationship
+            true_value = 0.5*x + 1.2*y
+            # Noise that reduces as regression converges
+            noise = (1 - progress) * math.sin(x*10)*math.cos(y*10)*0.5
+            return true_value + noise
+        
+        equation = "z = 0.5x + 1.2y + ε(1-t)\nLinear regression converging"
+        
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
+
+    def animate_3d_polynomial_regression(self, frames=100, start_frame=1,
+                                    x_range=(-3, 3), y_range=(-3, 3),
+                                    color=(0.9, 0.4, 0.2, 0.8), with_text=True):
+        """Animate polynomial regression fitting with increasing degrees"""
+        def func(x, y, progress=1):
+            # Animate degree increasing from 1 to 4
+            degree = int(1 + progress * 3)
+            return sum((0.5**n) * (x**n + y**n) for n in range(1, degree+1))
+        
+        equation = "z = Σ (0.5ⁿ)(xⁿ + yⁿ) for n=1→4\nPolynomial regression"
+        
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
+
+    def animate_3d_regularization(self, frames=100, start_frame=1,
+                                x_range=(-2, 2), y_range=(-2, 2),
+                                color=(0.7, 0.2, 0.5, 0.8), with_text=True):
+        """Animate regularization effects on regression surface"""
+        def func(x, y, progress=1):
+            # Base quadratic surface
+            base = x**2 + x*y + y**2
+            # Regularization term that grows over time
+            reg = progress * 5 * (abs(x) + abs(y))  # L1 regularization
+            return base + reg
+        
+        equation = "z = x² + xy + y² + λ|θ|\nL1 regularization increasing"
+        
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
+
+    def animate_3d_logistic_regression(self, frames=100, start_frame=1,
+                                    x_range=(-3, 3), y_range=(-3, 3),
+                                    color=(0.2, 0.8, 0.4, 0.8), with_text=True):
+        """Animate logistic regression decision boundary sharpening"""
+        def func(x, y, progress=1):
+            # Decision boundary becomes sharper as training progresses
+            sharpness = 2 + progress * 8  # Increasing slope
+            return 1 / (1 + math.exp(-sharpness*(x + 0.5*y - 1)))
+        
+        equation = "z = σ(k(t)(x + 0.5y - 1))\nDecision boundary sharpening"
+        
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
+
+    def animate_3d_residuals(self, frames=100, start_frame=1,
+                        x_range=(-3, 3), y_range=(-3, 3),
+                        color=(0.5, 0.5, 0.1, 0.8), with_text=True):
+        """Animate residual errors during regression fitting"""
+        def func(x, y, progress=1):
+            true_value = 0.8*x - 0.5*y
+            # Residuals that decrease over time
+            residual = (1-progress) * math.sin(x*10)*math.cos(y*10)
+            return true_value + residual
+        
+        equation = "z = 0.8x - 0.5y + (1-t)·noise\nResiduals decreasing"
+        
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
+
+    def animate_3d_overfitting(self, frames=100, start_frame=1,
+                            x_range=(-3, 3), y_range=(-3, 3),
+                            color=(0.8, 0.3, 0.6, 0.8), with_text=True):
+        """Animate the progression from underfitting to overfitting"""
+        def func(x, y, progress=1):
+            # True underlying function
+            true_func = math.sin(x) + math.cos(y)
+            # Start with underfit, progress to overfit
+            if progress < 0.3:  # Underfit phase
+                return 0.5*x + 0.3*y
+            elif progress < 0.6:  # Good fit
+                return true_func
+            else:  # Overfit phase
+                return true_func + 0.5*math.sin(5*x)*math.cos(5*y)*(progress-0.6)*5
+        
+        equation = "z: Underfit → Good fit → Overfit\nModel complexity increasing"
+        
+        return self.bg.animate_function_3d(func, frames=frames, start_frame=start_frame,
+                                        x_range=x_range, y_range=y_range, color=color,
+                                        equation_text=equation if with_text else None)
 
 
 
