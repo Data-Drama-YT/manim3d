@@ -25,7 +25,7 @@ class Graph3D:
         main_collection = bpy.data.collections.new("Graph3D")
         bpy.context.scene.collection.children.link(main_collection)
         
-        subcollections = ["Axes", "Grids", "Graphs", "Labels", "Text"]
+        subcollections = ["Axes", "Grids", "Graphs", "Labels", "Text","Points"]
         for name in subcollections:
             collection = bpy.data.collections.new(name)
             main_collection.children.link(collection)
@@ -1157,6 +1157,91 @@ class Graph3D:
         
         text_obj.rotation_euler = (0, 0, 0)
         text_obj.keyframe_insert("rotation_euler", frame=grow_frame + int(frames * 0.1))
+    
+    def create_point(self, location, name="Point", color=[], size=0.07,show_at=None):
+        """
+        Create a point at the specified 3D location
+        
+        Args:
+            location: (x, y, z) coordinates
+            name: name for the point object
+            color: color for the point (optional)
+            size: size of the point (overrides default)
+            
+        Returns:
+            The created point object
+        """
+            
+        # Create material for this point
+        point_mat = self._create_default_material(f"{name}_Material", color=(0.8, 0.8, 0.8, 0.3))
+        
+        # Create icosphere
+        bpy.ops.mesh.primitive_ico_sphere_add(
+            subdivisions=2,
+            radius=size,
+            location=location
+        )
+        
+        point = bpy.context.active_object
+        point.name = name
+        
+        # Apply material
+        if point.data.materials:
+            point.data.materials[0] = point_mat
+        else:
+            point.data.materials.append(point_mat)
+            
+        # Link to points collection
+        bpy.context.collection.objects.unlink(point)
+        self.collections["points"].objects.link(point)
+        # Handle animation if show_at is specified
+        if show_at is not None:
+            print("Inside animation module")
+            # Hide the point initially
+            point.hide_viewport = True
+            point.hide_render = True
+            point.keyframe_insert(data_path="hide_viewport", frame=show_at-1)
+            point.keyframe_insert(data_path="hide_render", frame=show_at-1)
+            
+            # Show the point at specified frame
+            point.hide_viewport = False
+            point.hide_render = False
+            point.keyframe_insert(data_path="hide_viewport", frame=show_at)
+            point.keyframe_insert(data_path="hide_render", frame=show_at)
+            
+            # Optional: Add scale animation for a "pop-in" effect
+            point.scale = (0, 0, 0)
+            point.keyframe_insert(data_path="scale", frame=show_at-1)
+            point.scale = (1, 1, 1)
+            point.keyframe_insert(data_path="scale", frame=show_at)
+            
+            # Optional: Add material opacity animation
+            if len(point_mat.node_tree.nodes) > 0:
+                bsdf = point_mat.node_tree.nodes.get('Principled BSDF')
+                if bsdf:
+                    bsdf.inputs['Alpha'].default_value = 0.0
+                    bsdf.inputs['Alpha'].keyframe_insert(data_path="default_value", frame=show_at-1)
+                    bsdf.inputs['Alpha'].default_value = color[3] if len(color) > 3 else 1.0
+                    bsdf.inputs['Alpha'].keyframe_insert(data_path="default_value", frame=show_at)
+        return point
+    
+    def create_points(self,locations,animate=False,show_from=0,animation_interval=1):
+        points=[]
+        point_count=0
+        for location in locations:
+            if animate==True:
+                points.append(self.create_point(location,show_at=show_from+((point_count+1)*animation_interval)))
+            else:
+                points.append(self.create_point(location))
+            point_count+=1
+        return points
+    
+    def create_points_from_csv(self,csv_url,animate=False,show_from=0,animation_interval=1):
+        data = np.genfromtxt(csv_url, delimiter=',', names=True, dtype=None, encoding=None)
+        location_tuples = [tuple(row) for row in data]
+        points_final=self.create_points(locations=location_tuples,animate=animate,show_from=show_from,animation_interval=animation_interval)
+        return points_final
+        
 
 # High-level convenience API for common graph functions
 class GraphPlotter:
@@ -1472,6 +1557,7 @@ def create_examples():
         return amplitude * (1 - r_squared/(spread**2))
     
     parabola_animation=bg.animate_function_3d(parabola_func,x_range=(-2,2),y_range=(-2,2))
+    point = bg.create_points_from_csv('points_list.csv',animate=True,show_from=5,animation_interval=10)
     # Example 5: Implicit surface
     #sphere = plotter.sphere(radius=3, center=(0, 0, 6))
     
