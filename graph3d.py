@@ -10,6 +10,7 @@ import bmesh
 import numpy as np
 import math
 from mathutils import Vector, Matrix
+import mathutils
 
 class Graph3D:
     """Main class for the Graph3D library"""
@@ -19,6 +20,8 @@ class Graph3D:
         self.scene = scene if scene else bpy.context.scene
         self.collections = {}
         self._setup_collections()
+        self.highlight_data = {}
+
         
     def _setup_collections(self):
         """Create collections for organizing the graph elements"""
@@ -1240,7 +1243,117 @@ class Graph3D:
         location_tuples = [tuple(row) for row in data]
         points_final=self.create_points(locations=location_tuples,animate=animate,show_from=show_from,animation_interval=animation_interval)
         return points_final
-        
+    
+    
+    def highlight_point(self, point, highlight_material_name="Highlighted_point"):
+        """Draw dotted perpendiculars to all axes from a point and change its material."""
+        point_id = point.name  # Use point's name as the key
+
+        # Create highlight entry if it doesn't exist
+        if point_id not in self.highlight_data:
+            self.highlight_data[point_id] = {
+                'original_material_name': point.data.materials[0].name if point.data.materials else "",
+                'highlight_objects': []
+            }
+        # Create the highlight material if it doesn't exist
+        if highlight_material_name not in bpy.data.materials:
+            mat = bpy.data.materials.new(name=highlight_material_name)
+            mat.use_nodes = True
+            nodes = mat.node_tree.nodes
+            nodes.clear()
+            emission = nodes.new(type='ShaderNodeEmission')
+            emission.inputs['Color'].default_value = (1, 0.5, 0, 1)  # Orange
+            emission.inputs['Strength'].default_value = 3.0
+            output = nodes.new(type='ShaderNodeOutputMaterial')
+            mat.node_tree.links.new(emission.outputs['Emission'], output.inputs['Surface'])
+        else:
+            mat = bpy.data.materials[highlight_material_name]
+
+        # Change the point's material
+        if point.data.materials:
+            point.data.materials[0] = mat
+        else:
+            point.data.materials.append(mat)
+
+        location = point.location
+
+        # Create perpendicular dotted lines to each axis
+        for axis in ['X', 'Y', 'Z']:
+            # Create curve for dotted line
+            curve_data = bpy.data.curves.new(f"{point.name}_highlight_{axis}", type='CURVE')
+            curve_data.dimensions = '3D'
+            curve_data.resolution_u = 2
+
+            polyline = curve_data.splines.new('POLY')
+            polyline.points.add(1)  # 2 points total
+
+            start_point = mathutils.Vector(location)
+            end_point = mathutils.Vector(location)
+
+            if axis == 'X':
+                end_point.x = 0
+            elif axis == 'Y':
+                end_point.y = 0
+            else:
+                end_point.z = 0
+
+            polyline.points[0].co = (start_point.x, start_point.y, start_point.z, 1)
+            polyline.points[1].co = (end_point.x, end_point.y, end_point.z, 1)
+            print(axis)
+            print(f"START: {(start_point.x, start_point.y, start_point.z, 1)}")
+            print(f"END: {(end_point.x, end_point.y, end_point.z, 1)}")
+            # Create object with curve
+            curve_obj = bpy.data.objects.new(f"{point.name}_highlight_{axis}", curve_data)
+
+            # Configure curve appearance
+            curve_data.bevel_depth = 0.01
+            curve_data.bevel_resolution = 0
+            curve_data.fill_mode = 'FULL'
+
+            bevel_mod = curve_obj.modifiers.new("Dotted_Bevel", type='BEVEL')
+            bevel_mod.width = 0.005
+            bevel_mod.segments = 1
+
+            # Set material
+            curve_obj.data.materials.append(mat)
+
+            # Link to collection
+            self.collections["points"].objects.link(curve_obj)
+
+            # Store reference
+            self.highlight_data[point_id]['highlight_objects'].append(curve_obj)
+
+        return point
+
+    def unhighlight_point(self, point):
+        """Restore original material and remove the highlighted perpendiculars."""
+        # Retrieve the point's highlight data from the class's dictionary
+        point_id = point.name  # or any unique identifier for the point
+        if point_id in self.highlight_data:
+            highlight_info = self.highlight_data[point_id]
+
+            # Restore the original material
+            original_material_name = highlight_info.get('original_material_name', '')
+            if original_material_name:
+                original_material = bpy.data.materials.get(original_material_name)
+                if original_material:
+                    # Apply the original material back to the point
+                    if point.data.materials:
+                        point.data.materials[0] = original_material
+                    else:
+                        point.data.materials.append(original_material)
+
+            # Remove the highlight objects (perpendicular lines)
+            for highlight_obj in highlight_info['highlight_objects']:
+                # Check if the object is in the collection by name
+                if highlight_obj.name in self.collections["points"].objects:
+                    self.collections["points"].objects.unlink(highlight_obj)
+                bpy.data.objects.remove(highlight_obj, do_unlink=True)
+
+            # Clean up the highlight data in the class's dictionary
+            del self.highlight_data[point_id]
+
+        return point
 
 
 
